@@ -1,0 +1,209 @@
+getwd()
+setwd("C:\\Users\\Sara\\Desktop\\data analysis\\5. IBM (2017.05.22~06.20)\\data")
+
+hr <- read.csv("IBM.csv")
+
+options(scipen=999) 
+names(hr) 
+
+library(plyr)
+hr <- rename(hr,c("癤풞ge"="age"))
+str(hr) #총 35개의 변수 존재
+
+sum(is.na(hr)) # 결측치 없음
+
+#1) 1개로 되어진 변수 지우기 (EmployeeCount, Over18 , StandardHours)
+#2) ID 변수 삭제 ( EmployeeNumber)
+#3) 내용 중복 변수 삭제 (DailyRate,HourlyRate ->대신 MonthlyRate로 사용 )
+names(hr)
+hr <- hr[,-c(9,10,22,27)]
+# hr <- hr[,-c("DailyRate","HourlyRate")]
+
+#################
+## 변수 정규화 ##
+#################
+
+summary(hr)
+#모두 단위가 다르다는 것을 알 수 있다.
+
+# 명목변수
+# BusinessTravel , Department , Education , EducationField, Gender , JobRole , MaritalStatus , OverTime 
+
+fact <- as.data.frame(hr[,c("Attrition","BusinessTravel" , "Department" , "EducationField" ,
+                            "Gender" , "JobRole" , "MaritalStatus" , "OverTime" )])
+
+normalize <- function(x){
+  return ((x-min(x))/(max(x)-min(x)))
+}
+
+
+names(hr)
+hr_n <- as.data.frame(lapply(hr[c(1,4,6,7,9,11,12,13,15,17,
+                                  18,19,21,22,23,24,25,26,27,28,
+                                  29,30,31)], normalize))
+hr_noraml <- cbind(fact, hr_n)
+
+str(hr_noraml)
+# summary()
+
+#Training set, Test set
+#set.seed(1234)
+#t <- sample(seq_len(nrow(hr)),size= floor(0.80*nrow(hr)))
+#train<- hr[t,] # 80% train set
+#test <- hr[-t,] # 20% test set
+#names(train)
+
+##
+set.seed(1234)
+t2 <- sample(seq_len(nrow(hr_noraml)),size= floor(0.80*nrow(hr_noraml)))
+train2<- hr[t2,] # 80% train set
+test2 <- hr[-t2,] # 20% test set
+names(train2)
+
+## k-Fold validation
+library(caret)
+ctrl <- trainControl(method="repeatedcv", number=10, savePredictions = T)
+model_fit <- train(Attrition~., data=train, method="glm",
+                   family="binomial", trControl=ctrl, tuneLength=3)
+
+model_fit
+#    Accuracy   Kappa    
+#    0.8707663  0.4533384
+#plot(model_fit)
+summary(model_fit)
+
+pred <- predict(model_fit, newdata = test)
+pred
+confusionMatrix(data=pred, test$Attrition)
+#Confusion Matrix and Statistics
+#           Reference
+# Prediction  No Yes
+#        No  233  33
+#        Yes  12  16
+
+# Accuracy : 0.8469          
+# 95% CI : (0.8006, 0.8861)
+# No Information Rate : 0.8333          
+# P-Value [Acc > NIR] : 0.296206 
+
+
+pred2 <- predict(model_fit, newdata=test)
+pred2
+confusionMatrix(data=pred2, test$Attrition)
+
+summary(model_fit)
+exp(coef(model_fit))
+
+
+
+## 
+ctrl2 <- trainControl(method="repeatedcv", number=10, savePredictions=T)
+model_fit2 <- train(Attrition~., data=train2, method="glm",
+                    family="binomial", trControl=ctrl, tuneLength=3)
+
+pred2 <- predict(model_fit2, newdata=test2)
+pred2
+confusionMatrix(data=pred2, test2$Attrition)
+#Confusion Matrix and Statistics
+# Reference
+#Prediction  No Yes
+#No  233  33
+#Yes  12  16
+
+#Accuracy : 0.8469          
+#95% CI : (0.8006, 0.8861)
+#No Information Rate : 0.8333          
+#P-Value [Acc > NIR] : 0.296206        
+
+#Kappa : 0.335           
+#Mcnemar's Test P-Value : 0.002869        
+
+#Sensitivity : 0.9510          
+#Specificity : 0.3265          
+#Pos Pred Value : 0.8759          
+#Neg Pred Value : 0.5714          
+#Prevalence : 0.8333          
+#Detection Rate : 0.7925          
+#Detection Prevalence : 0.9048          
+#Balanced Accuracy : 0.6388          
+#'Positive' Class : No   
+
+
+
+
+
+
+# 모델 해석 (anova 분석)
+anova(model_glm, test="Chisq")
+
+##
+anova(model_glm2, test="Chisq")
+
+library(pscl)
+pR2(model_glm)
+# r2CU : 0.4692724 
+# r제곱이 0.4692724 것으로 보아 모델이 train data set의 분산의 약 47%정도 설명해주고 있다.
+
+
+##
+pR2(model_glm2) # r제곱이 0.4690222 train data set의 분산의 약 47%정도 설명해주고 있다. 
+
+
+# ROC Curve를 이용한 모델 평가
+library(ROCR)
+pr<- prediction(pred, test$Attrition)
+prf <- performance(pr,measure = "tpr", x.measure = "fpr")
+plot(prf)
+
+##
+pr2 <- prediction(pred2, test2$Attrition)
+prf2 <- performance(pr2, measure = "tpr", x.measure = "fpr")
+plot(prf2)
+
+performance(pr,"auc")
+# "y.values" = AUC : 0.7966821 : 약 0.8로 좋은 모델로 판단.
+
+##
+performance(pr2,"auc") # 0.8147866
+
+
+
+# 변수 중요성
+library(caret)
+varimp <- varImp(model_glm)
+varimp
+
+
+##
+varimp2 <- varImp(model_glm2)
+varimp2
+
+
+#######regression
+#train$Attrition <- as.numeric(train$Attrition)-1
+
+#로지스틱 회귀 Logistic Regression Analysis
+model_glm <- glm(Attrition~., data=train, family="binomial")
+model_glm
+summary(model_glm)
+exp(coef(model_glm))
+# 해석
+# age = 0.9656 : 나이가 한살 많아 질수록 퇴사할 가능성이 0.96배만큼 높아진다.
+# -> 즉, 나이가 상승할수록 퇴사율이 낮아지는 것을 알 수 있다.
+
+##
+model_glm2 <- glm(Attrition~., data=train2, family="binomial")
+model_glm2
+summary(model_glm2)
+exp(coef(model_glm2))
+
+# 로지스틱 회귀모델 예측치 생성 
+pred <- predict(model_glm, newdata=test, type="response")
+#type="respone"속성은 예측결과를 0과1사이의 확률값으로 예측치를 얻기 위해 지정
+pred
+#model_glm01 <- glm(Attrition~., data=train, family="binomial")
+
+
+##
+pred2 <- predict(model_glm2, newdata=test2, type="response")
+pred2
